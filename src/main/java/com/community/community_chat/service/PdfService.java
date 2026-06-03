@@ -36,6 +36,12 @@ import java.util.Map;
 @Service
 public class PdfService {
 
+        public record PdfExtractResult(
+        String text,
+        List<String> visualPages,
+        String visualSummary) {
+    } //수정
+
     private static final String OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
     private static final String MODEL = "gpt-4o-mini";
     private static final String API_KEY_PLACEHOLDER_PREFIX = "open api key";
@@ -44,23 +50,99 @@ public class PdfService {
     @Value("${openai.api.key:}")
     private String apiKey;
 
-    public String extractText(MultipartFile file) throws IOException {
-        validatePdf(file);
+    public PdfExtractResult extractTextWithVisuals(MultipartFile file) throws IOException {
+    validatePdf(file);
 
-        try (InputStream inputStream = file.getInputStream();
-                PDDocument document = Loader.loadPDF(inputStream.readAllBytes())) {
+    try (InputStream inputStream = file.getInputStream();
+            PDDocument document = Loader.loadPDF(inputStream.readAllBytes())) {
 
-            PDFTextStripper stripper = new PDFTextStripper();
-            stripper.setSortByPosition(true);
-            String text = stripper.getText(document);
-            PdfVisualStats visualStats = analyzeVisualElements(document);
-            String visualSummary = analyzeVisualPages(document, visualStats);
-            String processedText = preprocessText(text, visualStats, visualSummary);
+        PDFTextStripper stripper = new PDFTextStripper();
+        stripper.setSortByPosition(true);
 
-            validateAllowedStudySubject(processedText);
-            return processedText;
+        String text = stripper.getText(document);
+        PdfVisualStats visualStats = analyzeVisualElements(document);
+
+        List<String> visualPages = extractEmbeddedImages(document);
+        String visualSummary = analyzeVisualPages(document, visualStats);
+
+        String processedText = preprocessTextOnly(text, visualStats);
+
+        validateAllowedStudySubject(
+                (processedText + "\n" + (visualSummary == null ? "" : visualSummary)).trim());
+
+        return new PdfExtractResult(
+                processedText,
+                visualPages,
+                visualSummary == null ? "" : visualSummary);
+    }
+}
+private List<String> extractEmbeddedImages(PDDocument document) {
+    List<String> images = new ArrayList<>();
+
+    try {
+        for (PDPage page : document.getPages()) {
+            extractImagesFromResources(page.getResources(), images);
+        }
+    } catch (Exception e) {
+        return List.of();
+    }
+
+    return images;
+}
+
+private void extractImagesFromResources(PDResources resources, List<String> images) throws IOException {
+    if (resources == null) return;
+
+    for (COSName name : resources.getXObjectNames()) {
+        PDXObject xObject = resources.getXObject(name);
+
+        if (xObject instanceof PDImageXObject imageObject) {
+            BufferedImage image = imageObject.getImage();
+            images.add(toJpegDataUrl(image));
+        }
+
+        if (xObject instanceof PDFormXObject formObject) {
+            extractImagesFromResources(formObject.getResources(), images);
         }
     }
+}
+private List<String> renderVisualPages(PDDocument document, PdfVisualStats visualStats) {
+    if (visualStats.imageCount() == 0 && visualStats.formCount() == 0) {
+        return List.of();
+    }
+
+    try {
+        PDFRenderer renderer = new PDFRenderer(document);
+        List<String> pageImages = new ArrayList<>();
+        int pageLimit = Math.min(document.getNumberOfPages(), MAX_VISUAL_PAGES);
+
+        for (int pageIndex = 0; pageIndex < pageLimit; pageIndex++) {
+            BufferedImage image = renderer.renderImageWithDPI(pageIndex, 130, ImageType.RGB);
+            pageImages.add(toJpegDataUrl(image));
+        }
+
+        return pageImages;
+    } catch (Exception e) {
+        return List.of();
+    }
+}
+
+private String preprocessTextOnly(String text, PdfVisualStats visualStats) {
+    String normalized = (text == null ? "" : text)
+            .replace("\r", "")
+            .replaceAll("[ \\t]+", " ")
+            .replaceAll("\\n{2,}", "\n")
+            .trim();
+
+    if (normalized.isBlank()) {
+        if (visualStats.imageCount() > 0 || visualStats.formCount() > 0) {
+            return "";
+        }
+        throw new IllegalArgumentException("PDF에서 텍스트를 추출하지 못했습니다. 텍스트가 포함된 PDF인지 확인해주세요.");
+    }
+
+    return normalized;
+}
 
     private void validatePdf(MultipartFile file) {
         if (file == null || file.isEmpty()) {

@@ -7,6 +7,8 @@ let pdfState = {
   summaryText: '',
   summaryItems: [],
   summaryRefs: [],
+  visualPages: [],
+  visualSummary: '',
   subject: '운영체제',
   keywords: [],
   blanks: [],
@@ -95,9 +97,14 @@ async function loadPdfTextFile(event) {
       }
 
       const extractedText = (data.text || '').trim();
-      if (!extractedText) {
-        throw new Error('PDF에서 텍스트를 추출하지 못했습니다. 이미지/스캔 PDF라면 OCR 처리가 필요합니다.');
-      }
+      const visualPages = Array.isArray(data.visualPages) ? data.visualPages : [];
+      const visualSummary = (data.visualSummary || '').trim();
+
+      console.log("visualPages:", visualPages.length);
+      console.log("visualSummary:", pdfState.visualSummary);
+      if (!extractedText && !visualPages.length) {
+        throw new Error('PDF에서 텍스트나 시각 자료를 추출하지 못했습니다.');
+}
 
       const detectedSubject = inferPdfSubject(extractedText);
       if (!isAllowedPdfSubject(detectedSubject)) {
@@ -107,8 +114,13 @@ async function loadPdfTextFile(event) {
 
       textarea.value = extractedText;
       pdfState.sourceText = extractedText;
+      pdfState.visualPages = visualPages;
+      pdfState.visualSummary = visualSummary;
       pdfState.subject = detectedSubject;
       pdfState.summaryId = 0;
+
+      renderPdfVisualMaterials(false);
+      
       showToast(`${detectedSubject} PDF를 불러왔습니다. (${extractedText.length.toLocaleString()}자)`);
       return;
     } catch (error) {
@@ -119,6 +131,62 @@ async function loadPdfTextFile(event) {
       event.target.value = '';
     }
   }
+function renderPdfVisualMaterials(showSummary = false) {
+  const box = document.getElementById('pdfVisualMaterials');
+  if (!box) return;
+
+  const pages = pdfState.visualPages || [];
+
+  if (!pages.length) {
+    box.innerHTML = '';
+    box.style.display = 'none';
+    return;
+  }
+
+  box.style.display = 'block';
+
+  const pageHtml = `
+    <div style="margin-bottom:18px;">
+      <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:10px;">
+        시각 자료 원본
+      </div>
+
+      <div style="
+        border:1px solid var(--border);
+        border-radius:10px;
+        background:white;
+        padding:12px;
+        max-height:520px;
+        overflow:auto;
+      ">
+        ${pages.map((src, index) => `
+          <div style="
+            margin-bottom:14px;
+            padding:10px;
+            border:1px solid #dbeafe;
+            border-radius:8px;
+            background:#ffffff;
+          ">
+            <div style="font-size:13px; font-weight:700; color:var(--text2); margin-bottom:8px;">
+              시각 자료 ${index + 1}
+            </div>
+            <img src="${src}" alt="PDF 시각 자료 ${index + 1}"
+              style="
+                display:block;
+                width:100%;
+                max-height:360px;
+                object-fit:contain;
+                border-radius:6px;
+                background:white;
+              ">
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  box.innerHTML = pageHtml;
+}
 
   const reader = new FileReader();
   reader.onload = e => {
@@ -244,13 +312,20 @@ async function generatePdfSummary() {
   let summaryText = '';
 
   try {
-    showToast('AI 요약을 생성하는 중입니다...');
-    summaryText = await postText(pdfApi.summary, text);
-  } catch (error) {
-    console.warn('Summary API failed. Falling back to local summary.', error);
-    summaryText = buildLocalSummary(text).join('\n');
-    showToast('요약 API 연결이 어려워 로컬 요약을 표시합니다.', 'WARN');
-  }
+  showToast('AI 요약을 생성하는 중입니다...');
+
+  const visualSummary = (pdfState.visualSummary || '').trim();
+const summarySource = [
+  text,
+  visualSummary ? `[시각 자료 요약]\n${visualSummary}` : ''
+].filter(Boolean).join('\n\n');
+
+summaryText = await postText(pdfApi.summary, summarySource);
+} catch (error) {
+  console.warn('Summary API failed. Falling back to local summary.', error);
+  summaryText = buildLocalSummary(text).join('\n');
+  showToast('요약 API 연결이 어려워 로컬 요약을 표시합니다.', 'WARN');
+}
 
   pdfState.summaryText = cleanSummaryMarkdown(summaryText);
   pdfState.summaryItems = buildLocalSummary(pdfState.summaryText || text);
@@ -265,7 +340,19 @@ async function generatePdfSummary() {
   }
   pdfState.summaryRefs = buildSummaryRefs(pdfState.summaryItems, pdfState.keywords);
 
-  document.getElementById('pdfSummaryOutput').innerHTML = `
+  const visualSummary = (pdfState.visualSummary || '').trim();
+
+document.getElementById('pdfSummaryOutput').innerHTML = `
+  <div style="margin-bottom:18px;">
+    <div style="
+      font-size:14px;
+      font-weight:800;
+      color:var(--text);
+      margin-bottom:10px;
+    ">
+      텍스트 요약
+    </div>
+
     <ul class="summary-list">
       ${pdfState.summaryRefs.map(ref => `
         <li>
@@ -274,8 +361,35 @@ async function generatePdfSummary() {
         </li>
       `).join('')}
     </ul>
-  `;
+  </div>
 
+  ${visualSummary ? `
+    <div style="
+      margin-top:18px;
+      padding-top:16px;
+      border-top:1px solid var(--border);
+    ">
+      <div style="
+        font-size:14px;
+        font-weight:800;
+        color:var(--text);
+        margin-bottom:10px;
+      ">
+        시각 자료 요약
+      </div>
+
+      <div style="
+        white-space:pre-wrap;
+        line-height:1.8;
+        font-size:14px;
+        color:var(--text2);
+      ">
+        ${escapePdfHtml(visualSummary)}
+      </div>
+    </div>
+  ` : ''}
+`;
+  renderPdfVisualMaterials(true);
   showToast('번호가 붙은 요약을 생성했습니다.');
 }
 
@@ -735,12 +849,14 @@ async function saveSummary(){
   }
 
   try{
-    const data={
-      pdfId: String(pdfState.summaryId||0),
-      summary: pdfState.summaryText,
-      question: Array.isArray(pdfState.blanks) && pdfState.blanks.length > 0? pdfState.blanks[0].question: "",
-      answer: Array.isArray(pdfState.blanks) && pdfState.blanks.length > 0? pdfState.blanks[0].keyword: ""
-    };
+    const data = {
+  pdfId: String(pdfState.summaryId || 0),
+  summary: pdfState.summaryText,
+  question: Array.isArray(pdfState.blanks) && pdfState.blanks.length > 0 ? pdfState.blanks[0].question : "",
+  answer: Array.isArray(pdfState.blanks) && pdfState.blanks.length > 0 ? pdfState.blanks[0].keyword : "",
+  visualPagesJson: JSON.stringify(pdfState.visualPages || []),
+  visualSummary: pdfState.visualSummary || ""
+};
 
     const response = await fetch("/api/pdf/save-summary", {
       method: 'POST',

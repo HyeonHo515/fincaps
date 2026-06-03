@@ -29,5 +29,18 @@ public class SummaryNote {
 
     private int pageNumber;
     private String userId;
+
+    @Lob
+    @Column(columnDefinition = "CLOB")
+    private String visualPagesJson;
+
+    @Lob
+    @Column(columnDefinition = "CLOB")
+    private String visualSummary;
+
     private LocalDateTime cratedAt = LocalDateTime.now(); //오타인가?
+
+    public Long getId() {
+        return id;
+    }
 }

@@ -1,17 +1,13 @@
 package com.community.community_chat.controller;
 
-import com.community.community_chat.entity.PdfDocument;
-import com.community.community_chat.entity.ReverseLearningLog;
-import com.community.community_chat.entity.StudyMemo;
-import com.community.community_chat.entity.SummaryNote;
-import com.community.community_chat.entity.QuizQuestion;
-import com.community.community_chat.service.LearningDataService;
-import com.community.community_chat.service.PdfService;
-import com.community.community_chat.service.SummaryService;
-import com.community.community_chat.service.QuizQuestionService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.MediaType;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,11 +21,17 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import com.community.community_chat.entity.PdfDocument;
+import com.community.community_chat.entity.QuizQuestion;
+import com.community.community_chat.entity.ReverseLearningLog;
+import com.community.community_chat.entity.StudyMemo;
+import com.community.community_chat.entity.SummaryNote;
+import com.community.community_chat.service.LearningDataService;
+import com.community.community_chat.service.PdfService;
+import com.community.community_chat.service.QuizQuestionService;
+import com.community.community_chat.service.SummaryService;
+
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/pdf")
@@ -42,24 +44,27 @@ public class PdfController {
     private final LearningDataService learningDataService;
     private final QuizQuestionService quizQuestionService;
 
-    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<Map<String, Object>> uploadPdf(@RequestPart("file") MultipartFile file) throws IOException {
-        String extractedText;
-        try {
-            extractedText = pdfService.extractText(file);
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> error = new LinkedHashMap<>();
-            error.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
-        }
+   @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+public ResponseEntity<Map<String, Object>> uploadPdf(@RequestPart("file") MultipartFile file) throws IOException {
+    PdfService.PdfExtractResult result;
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("fileName", file.getOriginalFilename());
-        response.put("textLength", extractedText.length());
-        response.put("text", extractedText);
-
-        return ResponseEntity.ok(response);
+    try {
+        result = pdfService.extractTextWithVisuals(file);
+    } catch (IllegalArgumentException e) {
+        Map<String, Object> error = new LinkedHashMap<>();
+        error.put("message", e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
+
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put("fileName", file.getOriginalFilename());
+    response.put("textLength", result.text().length());
+    response.put("text", result.text());
+    response.put("visualPages", result.visualPages());
+    response.put("visualSummary", result.visualSummary());
+
+    return ResponseEntity.ok(response);
+}
 
     @PostMapping("/summary")
     public ResponseEntity<String> summarize(@RequestBody String text) {
@@ -67,35 +72,58 @@ public class PdfController {
     }
 
     @PostMapping("/upload-summary")
-    public ResponseEntity<Map<String, Object>> uploadAndSummarize(
-            @RequestHeader(value = "X-User-Id", required = false) String userId,
-            @RequestParam("file") MultipartFile file) throws Exception {
-        String text;
-        try {
-            text = pdfService.extractText(file);
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> error = new LinkedHashMap<>();
-            error.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
-        }
-        PdfDocument pdf = learningDataService.savePdf(file.getOriginalFilename(), text);
-        String summary = summaryService.summarize(text);
-        Map<String, Object> quiz = summaryService.generateBlankQuiz(summary);
+public ResponseEntity<Map<String, Object>> uploadAndSummarize(
+        @RequestHeader(value = "X-User-Id", required = false) String userId,
+        @RequestParam("file") MultipartFile file) throws Exception {
 
-        String question = (String) quiz.get("question");
-        String answer = (String) quiz.get("answer");
-        SummaryNote note = learningDataService.saveSummary(userId, pdf.getId(), summary, question, answer);
+    PdfService.PdfExtractResult extracted;
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("pdfId", pdf.getId());
-        result.put("summaryId", note.getId());
-        result.put("summary", summary);
-        result.put("question", question);
-        result.put("answer", answer);
-
-        return ResponseEntity.ok(result);
+    try {
+        extracted = pdfService.extractTextWithVisuals(file);
+    } catch (IllegalArgumentException e) {
+        Map<String, Object> error = new LinkedHashMap<>();
+        error.put("message", e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
 
+    String text = extracted.text() == null ? "" : extracted.text();
+    String visualSummary = extracted.visualSummary() == null ? "" : extracted.visualSummary();
+
+    String summarySource = text;
+    if (!visualSummary.isBlank()) {
+        summarySource = (summarySource + "\n\n[표/그래프/이미지 설명]\n" + visualSummary).trim();
+    }
+
+    PdfDocument pdf = learningDataService.savePdf(file.getOriginalFilename(), summarySource);
+    String summary = summaryService.summarize(summarySource);
+    Map<String, Object> quiz = summaryService.generateBlankQuiz(summary);
+
+    String question = (String) quiz.get("question");
+    String answer = (String) quiz.get("answer");
+    String visualPagesJson = extracted.visualPages() == null
+        ? "[]"
+        : new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(extracted.visualPages());
+
+    SummaryNote note = learningDataService.saveSummary(
+        userId,
+        pdf.getId(),
+        summary,
+        question,
+        answer,
+        visualPagesJson,
+        visualSummary);
+
+    Map<String, Object> result = new HashMap<>();
+    result.put("pdfId", pdf.getId());
+    result.put("summaryId", note.getId());
+    result.put("summary", summary);
+    result.put("question", question);
+    result.put("answer", answer);
+    result.put("visualPages", extracted.visualPages());
+    result.put("visualSummary", visualSummary);
+
+    return ResponseEntity.ok(result);
+}
     @PostMapping("/quiz")
     public ResponseEntity<Map<String, Object>> generateQuiz(@RequestBody String text) {
         try {
@@ -147,25 +175,36 @@ public class PdfController {
     }
 
     @PostMapping("/save-summary")
-    public ResponseEntity<String> saveSummary(
-            @RequestHeader(value = "X-User-Id", required = false) String userId, // 헤더 수집
-            @RequestBody Map<String, String> request) {
+public ResponseEntity<Map<String, Object>> saveSummary(
+        @RequestHeader(value = "X-User-Id", required = false) String userId,
+        @RequestBody Map<String, String> request) {
 
-        Long pdfId = parseOptionalLong(request.get("pdfId"));
-        String summary = request.get("summary");
-        String question = request.get("question");
-        String answer = request.get("answer");
+    Long pdfId = parseOptionalLong(request.get("pdfId"));
+    String summary = request.get("summary");
+    String question = request.get("question");
+    String answer = request.get("answer");
+    String visualPagesJson = request.getOrDefault("visualPagesJson", "[]");
+    String visualSummary = request.getOrDefault("visualSummary", "");
 
-        // 유저 아이디가 넘어오지 않은 경우 예외 방지용 기본값 처리
-        if (userId == null || userId.isBlank()) {
-            userId = "guest";
-        }
-
-        // 🌟 중요: 서비스 메서드를 호출할 때 첫 번째 인자로 userId를 조립해서 넘겨줍니다!
-        SummaryNote note = learningDataService.saveSummary(userId, pdfId, summary, question, answer);
-
-        return ResponseEntity.ok("Summary saved with ID: " + note.getId());
+    if (userId == null || userId.isBlank()) {
+        userId = "guest";
     }
+
+    SummaryNote note = learningDataService.saveSummary(
+            userId,
+            pdfId,
+            summary,
+            question,
+            answer,
+            visualPagesJson,
+            visualSummary);
+
+    Map<String, Object> result = new HashMap<>();
+    result.put("id", note.getId());
+    result.put("summaryId", note.getId());
+
+    return ResponseEntity.ok(result);
+}
 
     @PostMapping("/save-question")
     public ResponseEntity<QuizQuestion> saveQuestion(

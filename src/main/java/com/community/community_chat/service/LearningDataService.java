@@ -1,5 +1,9 @@
 package com.community.community_chat.service;
 
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+
 import com.community.community_chat.entity.PdfDocument;
 import com.community.community_chat.entity.ReverseLearningLog;
 import com.community.community_chat.entity.StudyMemo;
@@ -8,10 +12,8 @@ import com.community.community_chat.repository.PdfDocumentRepository;
 import com.community.community_chat.repository.ReverseLearningLogRepository;
 import com.community.community_chat.repository.StudyMemoRepository;
 import com.community.community_chat.repository.SummaryNoteRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
-import java.util.List;
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
@@ -29,16 +31,26 @@ public class LearningDataService {
         return pdfDocumentRepository.save(pdf);
     }
 
-    public SummaryNote saveSummary(String userId, Long pdfId, String summary, String quizQuestion, String quizAnswer) {
-        SummaryNote note = new SummaryNote();
-        note.setPdfId(pdfId);
-        note.setSummary(summary);
-        note.setQuizQuestion(quizQuestion);
-        note.setQuizAnswer(quizAnswer);
-        note.setPageNumber(1);
-        note.setUserId(userId);
-        return summaryNoteRepository.save(note);
-    }
+    public SummaryNote saveSummary(
+        String userId,
+        Long pdfId,
+        String summary,
+        String quizQuestion,
+        String quizAnswer,
+        String visualPagesJson,
+        String visualSummary) {
+
+    SummaryNote note = new SummaryNote();
+    note.setPdfId(pdfId);
+    note.setSummary(summary);
+    note.setQuizQuestion(quizQuestion);
+    note.setQuizAnswer(quizAnswer);
+    note.setPageNumber(1);
+    note.setUserId(userId);
+    note.setVisualPagesJson(visualPagesJson == null ? "[]" : visualPagesJson);
+    note.setVisualSummary(visualSummary == null ? "" : visualSummary);
+    return summaryNoteRepository.save(note);
+}
 
     public List<SummaryNote> getAllSummaries() {
         return summaryNoteRepository.findAll();
