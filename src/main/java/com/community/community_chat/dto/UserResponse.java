@@ -11,6 +11,5 @@ public class UserResponse {
     private String loginId;
     private String email;
     private String name;
-    private Integer grade;
     private String role;
 }

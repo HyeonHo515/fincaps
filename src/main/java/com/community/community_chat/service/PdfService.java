@@ -36,21 +36,25 @@ import java.util.Map;
 @Service
 public class PdfService {
 
-        public record PdfExtractResult(
-        String text,
-        List<String> visualPages,
-        String visualSummary) {
-    } //수정
+    public record PdfExtractResult(
+            String text,
+            List<String> visualPages,
+            String visualSummary) {
+    }
 
     private static final String OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
     private static final String MODEL = "gpt-4o-mini";
     private static final String API_KEY_PLACEHOLDER_PREFIX = "open api key";
-    private static final int MAX_VISUAL_PAGES = 10;
+    private static final int MAX_VISUAL_PAGES = 20;
 
     @Value("${openai.api.key:}")
     private String apiKey;
 
-    public PdfExtractResult extractTextWithVisuals(MultipartFile file) throws IOException {
+    public String extractText(MultipartFile file) throws IOException {
+    return extractTextWithVisuals(file).text();
+}
+
+public PdfExtractResult extractTextWithVisuals(MultipartFile file) throws IOException {
     validatePdf(file);
 
     try (InputStream inputStream = file.getInputStream();
@@ -63,7 +67,7 @@ public class PdfService {
         PdfVisualStats visualStats = analyzeVisualElements(document);
 
         List<String> visualPages = extractEmbeddedImages(document);
-        String visualSummary = analyzeVisualPages(document, visualStats);
+        String visualSummary = analyzeVisualImages(visualPages);
 
         String processedText = preprocessTextOnly(text, visualStats);
 
@@ -76,6 +80,18 @@ public class PdfService {
                 visualSummary == null ? "" : visualSummary);
     }
 }
+private String analyzeVisualImages(List<String> visualImages) {
+    if (!hasApiKey() || visualImages == null || visualImages.isEmpty()) {
+        return "";
+    }
+
+    try {
+        return requestVisualSummary(visualImages, visualImages.size());
+    } catch (Exception e) {
+        return "";
+    }
+}
+
 private List<String> extractEmbeddedImages(PDDocument document) {
     List<String> images = new ArrayList<>();
 
@@ -105,43 +121,6 @@ private void extractImagesFromResources(PDResources resources, List<String> imag
             extractImagesFromResources(formObject.getResources(), images);
         }
     }
-}
-private List<String> renderVisualPages(PDDocument document, PdfVisualStats visualStats) {
-    if (visualStats.imageCount() == 0 && visualStats.formCount() == 0) {
-        return List.of();
-    }
-
-    try {
-        PDFRenderer renderer = new PDFRenderer(document);
-        List<String> pageImages = new ArrayList<>();
-        int pageLimit = Math.min(document.getNumberOfPages(), MAX_VISUAL_PAGES);
-
-        for (int pageIndex = 0; pageIndex < pageLimit; pageIndex++) {
-            BufferedImage image = renderer.renderImageWithDPI(pageIndex, 130, ImageType.RGB);
-            pageImages.add(toJpegDataUrl(image));
-        }
-
-        return pageImages;
-    } catch (Exception e) {
-        return List.of();
-    }
-}
-
-private String preprocessTextOnly(String text, PdfVisualStats visualStats) {
-    String normalized = (text == null ? "" : text)
-            .replace("\r", "")
-            .replaceAll("[ \\t]+", " ")
-            .replaceAll("\\n{2,}", "\n")
-            .trim();
-
-    if (normalized.isBlank()) {
-        if (visualStats.imageCount() > 0 || visualStats.formCount() > 0) {
-            return "";
-        }
-        throw new IllegalArgumentException("PDF에서 텍스트를 추출하지 못했습니다. 텍스트가 포함된 PDF인지 확인해주세요.");
-    }
-
-    return normalized;
 }
 
     private void validatePdf(MultipartFile file) {
@@ -192,36 +171,11 @@ private String preprocessTextOnly(String text, PdfVisualStats visualStats) {
         return new VisualCount(imageCount, formCount);
     }
 
-    private String analyzeVisualPages(PDDocument document, PdfVisualStats visualStats) {
-        if (!hasApiKey() || (visualStats.imageCount() == 0 && visualStats.formCount() == 0)) {
-            return "";
-        }
-
-        try {
-            PDFRenderer renderer = new PDFRenderer(document);
-            List<String> pageImages = new ArrayList<>();
-            int pageLimit = Math.min(document.getNumberOfPages(), MAX_VISUAL_PAGES);
-
-            for (int pageIndex = 0; pageIndex < pageLimit; pageIndex++) {
-                BufferedImage image = renderer.renderImageWithDPI(pageIndex, 110, ImageType.RGB);
-                pageImages.add(toJpegDataUrl(image));
-            }
-
-            if (pageImages.isEmpty()) {
-                return "";
-            }
-
-            return requestVisualSummary(pageImages, document.getNumberOfPages());
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
     private String toJpegDataUrl(BufferedImage image) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        ImageIO.write(image, "jpg", outputStream);
+        ImageIO.write(image, "png", outputStream);
         String base64 = Base64.getEncoder().encodeToString(outputStream.toByteArray());
-        return "data:image/jpeg;base64," + base64;
+        return "data:image/png;base64," + base64;
     }
 
     private String requestVisualSummary(List<String> pageImages, int totalPages) {
@@ -233,19 +187,26 @@ private String preprocessTextOnly(String text, PdfVisualStats visualStats) {
 
         List<Map<String, Object>> content = new ArrayList<>();
         content.add(Map.of(
-                "type", "text",
-                "text",
-                "업로드된 PDF 페이지 이미지들을 보고 학습 요약에 반영할 내용을 한국어로 정리해줘. "
-                        + "표, 그래프, 차트, 수식, 그림, 사진, 스캔된 텍스트가 있다면 각각 무엇을 의미하는지 설명해줘. "
-                        + "컴퓨터공학 자료라면 알고리즘, 자료구조, 운영체제 용어를 정확히 구분해줘. "
-                        + "총 " + totalPages + "쪽 중 앞 " + pageImages.size() + "쪽을 분석한다."));
+        "type", "text",
+        "text",
+        "아래 이미지들은 PDF 전체 페이지가 아니라, PDF 안에서 추출된 시각 자료입니다.\n"
+                + "각 이미지를 시각 자료 1, 시각 자료 2처럼 구분해서 한국어로 요약해줘.\n"
+                + "이미지 안에 있는 표, 그래프, 그림, 알고리즘 흐름도, 수식, 코드, 단계 설명을 중심으로 정리해줘.\n"
+                + "PDF 본문 전체를 페이지별로 요약하지 말고, 반드시 첨부된 시각 자료 이미지 자체만 설명해줘.\n"
+                + "빠른정렬, 퀵정렬, Quick Sort, 합병정렬, 이분검색, 분할정복 같은 알고리즘 이름이 이미지 안에 보이면 생략하지 말고 포함해줘.\n"
+                + "출력 형식은 아래처럼 해줘.\n\n"
+                + "### 시각 자료 1\n"
+                + "- 주제:\n"
+                + "- 이미지 내용:\n"
+                + "- 학습 요약:\n\n"
+                + "총 " + totalPages + "개의 시각 자료를 분석한다."));
 
         for (String imageUrl : pageImages) {
             content.add(Map.of(
                     "type", "image_url",
                     "image_url", Map.of(
                             "url", imageUrl,
-                            "detail", "low")));
+                            "detail", "high")));
         }
 
         List<Map<String, Object>> messages = List.of(
@@ -260,7 +221,7 @@ private String preprocessTextOnly(String text, PdfVisualStats visualStats) {
         Map<String, Object> body = new HashMap<>();
         body.put("model", MODEL);
         body.put("messages", messages);
-        body.put("max_tokens", 900);
+        body.put("max_tokens", 1800);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
         try {
@@ -295,35 +256,22 @@ private String preprocessTextOnly(String text, PdfVisualStats visualStats) {
         }
     }
 
-    private String preprocessText(String text, PdfVisualStats visualStats, String visualSummary) {
-        String normalized = (text == null ? "" : text)
-                .replace("\r", "")
-                .replaceAll("[ \\t]+", " ")
-                .replaceAll("\\n{2,}", "\n")
-                .trim();
-        String normalizedVisualSummary = visualSummary == null ? "" : visualSummary.trim();
+    private String preprocessTextOnly(String text, PdfVisualStats visualStats) {
+    String normalized = (text == null ? "" : text)
+            .replace("\r", "")
+            .replaceAll("[ \\t]+", " ")
+            .replaceAll("\\n{2,}", "\n")
+            .trim();
 
-        if (normalized.isBlank()) {
-            if (!normalizedVisualSummary.isBlank()) {
-                return "[PDF 이미지/도표/스캔 분석]\n" + normalizedVisualSummary;
-            }
-            if (visualStats.imageCount() > 0 || visualStats.formCount() > 0) {
-                throw new IllegalArgumentException("PDF에서 텍스트를 추출하지 못했습니다. 이미지/스캔 PDF로 보이며 OCR 또는 비전 분석 처리가 필요합니다.");
-            }
-            throw new IllegalArgumentException("PDF에서 텍스트를 추출하지 못했습니다. 텍스트가 포함된 PDF인지 확인해주세요.");
+    if (normalized.isBlank()) {
+        if (visualStats.imageCount() > 0 || visualStats.formCount() > 0) {
+            return "";
         }
-
-        if (!normalizedVisualSummary.isBlank()) {
-            normalized += "\n\n[PDF 이미지/도표/그래프/수식 분석]\n" + normalizedVisualSummary;
-        } else if (visualStats.imageCount() > 0 || visualStats.formCount() > 0) {
-            normalized += "\n\n[PDF 비텍스트 요소 감지]\n"
-                    + "- 전체 " + visualStats.pageCount() + "쪽에서 이미지/도표/그래프/수식으로 쓰였을 수 있는 객체 "
-                    + visualStats.imageCount() + "개와 복합 도형 객체 " + visualStats.formCount() + "개가 감지되었습니다.\n"
-                    + "- 현재 요약은 PDF에서 추출 가능한 텍스트와 표 안의 텍스트를 우선 반영합니다. 이미지 자체의 세부 내용은 OCR/비전 분석이 연결되면 더 정확히 반영할 수 있습니다.";
-        }
-
-        return normalized;
+        throw new IllegalArgumentException("PDF에서 텍스트를 추출하지 못했습니다. 텍스트가 포함된 PDF인지 확인해주세요.");
     }
+
+    return normalized;
+}
 
     private boolean hasApiKey() {
         return apiKey != null

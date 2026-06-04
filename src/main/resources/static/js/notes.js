@@ -192,7 +192,6 @@ function normalizeNote(note) {
     answerKeywordsJson: note.answerKeywordsJson || '[]',
     debugSolved: Boolean(note.debugSolved),
     relapsed: Boolean(note.relapsed),
-    cooldownUntil: note.cooldownUntil || null,
     userId: note.userId || getActiveUserId(),
     localOnly: Boolean(note.localOnly)
   };

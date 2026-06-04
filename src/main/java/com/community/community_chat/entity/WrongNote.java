@@ -53,7 +53,6 @@ public class WrongNote {
 
     private boolean debugSolved;
     private boolean relapsed;
-    private Long cooldownUntil;
     private LocalDateTime createdAt = LocalDateTime.now();
 
     public void applyDefaults() {

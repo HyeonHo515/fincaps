@@ -37,7 +37,6 @@ public class AuthController {
         user.setPassword(request.getPassword());
         user.setEmail(request.getEmail());
         user.setName(request.getName());
-        user.setGrade(request.getGrade());
         user.setRole(Role.USER);
 
         userRepository.save(user);
@@ -65,7 +64,6 @@ public class AuthController {
                         user.getLoginId(),
                         user.getEmail(),
                         user.getName(),
-                        user.getGrade(),
                         user.getRole().name()));
     }
 }

@@ -226,7 +226,20 @@ function syncLanguageData(langId) {
 }
 
 languageSelect?.addEventListener('change', (e) => {
-  syncLanguageData(e.target.value);
+  const selectedLang = e.target.value;
+
+  // C(50) 또는 C++(54)을 선택했을 때
+  if (selectedLang === "50" || selectedLang === "54") {
+    alert("시스템 안내\n\nC와 C++의 메모리 디버거 추적 엔진은 현재 최적화 및 점검 중입니다.");
+    
+    // 경고창 확인 후 이전 정상 언어로 강제 복구
+    e.target.value = lastValidLanguage;
+    return; // 아래 로직(동기화)은 실행하지 않고 종료
+  }
+
+  // 정상적인 언어를 선택했다면 변수를 업데이트하고 화면 동기화 진행
+  lastValidLanguage = selectedLang;
+  syncLanguageData(selectedLang);
 });
 
 // 화면 렌더링 함수

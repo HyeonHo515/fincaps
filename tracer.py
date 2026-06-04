@@ -15,6 +15,15 @@ def trace_code(file_path, input_path):
     frames = []
 
     def tracer(frame, event, arg):
+        # 🌟 [수정 1] 핵심 문지기 로직: 파일 이름 확인
+        filename = frame.f_code.co_filename
+        
+        # 파일 경로에 'user_code_'가 없으면 (즉, random.py 같은 파이썬 기본 라이브러리라면) 
+        # 내부로 들어가지 않고 쿨하게 패스합니다! (찌꺼기 차단)
+        if "user_code_" not in filename:
+            return None
+
+        # 기존 변수 추적 로직 (그대로 유지)
         if event == 'line':
             line_num = frame.f_lineno
             local_vars = {}
@@ -31,17 +40,19 @@ def trace_code(file_path, input_path):
 
     global_env = {}
     
-    # 🌟 출력을 가로채서 숨김 (자바에게 보낼 JSON 데이터와 섞이지 않도록)
+    # 출력을 가로채서 숨김
     old_stdout = sys.stdout
     sys.stdout = io.StringIO()
     
-    # 🌟 입력을 가로채서 미리 받아둔 텍스트를 던져줌 (input() 함수가 읽을 수 있도록)
+    # 입력을 가로채서 미리 받아둔 텍스트를 던져줌
     old_stdin = sys.stdin
     sys.stdin = io.StringIO(user_input)
 
     sys.settrace(tracer)
     try:
-        exec(user_code, global_env)
+        # 🌟 [수정 2] exec가 임시 파일명(user_code_)을 완벽하게 인식할 수 있도록 compile()로 포장합니다.
+        compiled_code = compile(user_code, file_path, 'exec')
+        exec(compiled_code, global_env)
     except Exception as e:
         pass
     finally:
@@ -55,7 +66,7 @@ def trace_code(file_path, input_path):
         "frames": frames
     }
     
-    # 🌟 자바에게 출력(print)하기 직전에 표준 출력을 강제로 UTF-8로 설정합니다.
+    # 자바에게 출력(print)하기 직전에 표준 출력을 강제로 UTF-8로 설정
     sys.stdout.reconfigure(encoding='utf-8')
     
     print(json.dumps(result, ensure_ascii=False))
@@ -63,7 +74,7 @@ def trace_code(file_path, input_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("filepath")
-    parser.add_argument("inputpath") # 🌟 두 번째 인자(입력 파일 경로) 추가
+    parser.add_argument("inputpath") 
     args = parser.parse_args()
     
     trace_code(args.filepath, args.inputpath)

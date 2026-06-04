@@ -189,16 +189,16 @@
         </section>
 
         <section class="study-panel">
-  <div class="pdf-card-title">시각 자료</div>
-  <div id="pdfVisualMaterials" style="display:none;"></div>
-</section>
+          <div class="pdf-card-title">시각 자료</div>
+          <div id="pdfVisualMaterials" style="display:none;"></div>
+        </section>
 
-<section class="study-panel">
-  <div class="pdf-card-title">구조화 요약</div>
-  <div id="pdfSummaryOutput" class="pdf-output">아직 요약이 생성되지 않았습니다.</div>
-</section>
-
-
+        <section class="study-panel">
+          <div class="pdf-card-title">구조화 요약</div>
+          <div id="pdfSummaryOutput" class="pdf-output">아직 요약이 생성되지 않았습니다.</div>
+        </section>
+      </div>
+      
       <div class="reverse-panel">
         <section class="study-panel">
           <div class="pdf-card-title">빈칸 복습</div>
@@ -511,6 +511,7 @@
       <div class="board-tabs" id="mypage-tabs">
         <div class="btab active" onclick="switchMyPageTab('pdf', this)">📄 PDF 요약 기록</div>
         <div class="btab" onclick="switchMyPageTab('quiz', this)">🧠 오답노트 기록</div>
+        <div class="btab" onclick="switchMyPageTab('feedback', this)">🤖 AI 피드백 기록</div>
         <div class="btab" onclick="switchMyPageTab('posts', this)">📝 작성한 게시글</div>
         <div class="btab" onclick="switchMyPageTab('comments', this)">💬 작성한 댓글</div>
       </div>
@@ -523,6 +524,10 @@
       <div id="mypage-content-quiz" class="mypage-section" style="display:none;">
         <div class="notes-grid" id="mypage-quiz-list">
           </div>
+      </div>
+
+      <div id="mypage-content-feedback" class="mypage-section" style="display:none;">
+        <div class="post-list" id="mypage-feedback-list"></div>
       </div>
 
       <div id="mypage-content-posts" class="mypage-section">

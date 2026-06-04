@@ -1,10 +1,15 @@
 package com.community.community_chat.entity;
 
-import jakarta.persistence.*;
+import java.time.LocalDateTime;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
 import lombok.Getter;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 @Entity
 @Getter
@@ -15,32 +20,20 @@ public class SummaryNote {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long pdfId;
-
     @Lob
     @Column(columnDefinition = "CLOB")
     private String summary;
-
-    @Lob
-    @Column(columnDefinition = "CLOB")
-    private String quizQuestion;
-
-    private String quizAnswer;
 
     private int pageNumber;
     private String userId;
 
     @Lob
-    @Column(columnDefinition = "CLOB")
+    @Column(columnDefinition = "LONGTEXT")
     private String visualPagesJson;
 
     @Lob
-    @Column(columnDefinition = "CLOB")
+    @Column(columnDefinition = "LONGTEXT")
     private String visualSummary;
 
-    private LocalDateTime cratedAt = LocalDateTime.now(); //오타인가?
-
-    public Long getId() {
-        return id;
-    }
+    private LocalDateTime cratedAt = LocalDateTime.now();
 }

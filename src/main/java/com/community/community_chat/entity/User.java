@@ -26,8 +26,6 @@ public class User {
     @Column(nullable = false)
     private String name;
 
-    private Integer grade;
-
     @Enumerated(EnumType.STRING)
     private Role role;
 }

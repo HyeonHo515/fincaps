@@ -46,14 +46,15 @@ function requireLoginForSave() {
 
 const pdfApi = {
   upload: '/api/pdf/upload',
-  uploadSummary: '/api/pdf/upload-summary',
   summary: '/api/pdf/summary',
   quiz: '/api/pdf/quiz',
   saveQuestion: '/api/pdf/save-question',
   reverseQuestion: '/api/pdf/reverse-question',
   evaluateAnswer: '/api/pdf/evaluate-answer',
   memo: '/api/pdf/memo',
-  memoList: summaryId => `/api/pdf/memo/${summaryId || 0}`
+  memoList: summaryId => `/api/pdf/memo/${summaryId || 0}`,
+  updateMemo: '/api/pdf/memo/update',
+  deleteMemo: '/api/pdf/memo/delete'
 };
 
 const maxPdfFileSizeMb = 50;
@@ -99,9 +100,10 @@ async function loadPdfTextFile(event) {
       const extractedText = (data.text || '').trim();
       const visualPages = Array.isArray(data.visualPages) ? data.visualPages : [];
       const visualSummary = (data.visualSummary || '').trim();
+      console.log("visualPages count:", visualPages.length);
+      console.log("first visual src:", visualPages[0]?.slice(0, 80));
+      console.log("first visual length:", visualPages[0]?.length);
 
-      console.log("visualPages:", visualPages.length);
-      console.log("visualSummary:", pdfState.visualSummary);
       if (!extractedText && !visualPages.length) {
         throw new Error('PDF에서 텍스트나 시각 자료를 추출하지 못했습니다.');
 }
@@ -119,8 +121,8 @@ async function loadPdfTextFile(event) {
       pdfState.subject = detectedSubject;
       pdfState.summaryId = 0;
 
-      renderPdfVisualMaterials(false);
-      
+      renderPdfVisualMaterials();
+
       showToast(`${detectedSubject} PDF를 불러왔습니다. (${extractedText.length.toLocaleString()}자)`);
       return;
     } catch (error) {
@@ -131,7 +133,18 @@ async function loadPdfTextFile(event) {
       event.target.value = '';
     }
   }
-function renderPdfVisualMaterials(showSummary = false) {
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    textarea.value = e.target.result;
+    pdfState.sourceText = textarea.value;
+    showToast('텍스트 파일을 불러왔습니다.');
+  };
+  reader.readAsText(file, 'utf-8');
+  event.target.value = '';
+}
+
+function renderPdfVisualMaterials() {
   const box = document.getElementById('pdfVisualMaterials');
   if (!box) return;
 
@@ -145,7 +158,7 @@ function renderPdfVisualMaterials(showSummary = false) {
 
   box.style.display = 'block';
 
-  const pageHtml = `
+  box.innerHTML = `
     <div style="margin-bottom:18px;">
       <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:10px;">
         시각 자료 원본
@@ -184,18 +197,6 @@ function renderPdfVisualMaterials(showSummary = false) {
       </div>
     </div>
   `;
-
-  box.innerHTML = pageHtml;
-}
-
-  const reader = new FileReader();
-  reader.onload = e => {
-    textarea.value = e.target.result;
-    pdfState.sourceText = textarea.value;
-    showToast('텍스트 파일을 불러왔습니다.');
-  };
-  reader.readAsText(file, 'utf-8');
-  event.target.value = '';
 }
 
 async function readJsonOrText(response) {
@@ -312,21 +313,53 @@ async function generatePdfSummary() {
   let summaryText = '';
 
   try {
-  showToast('AI 요약을 생성하는 중입니다...');
+    showToast('AI 요약을 생성하는 중입니다...');
+    
+    // 유저 ID 추출
+    let currentUserId = 'guest';
+    if (typeof window.getCurrentUserId === 'function' && window.getCurrentUserId()) {
+      currentUserId = window.getCurrentUserId();
+    } else if (typeof window.currentUser !== 'undefined' && window.currentUser?.id) {
+      currentUserId = window.currentUser.id;
+    } else {
+      currentUserId = sessionStorage.getItem("userId") || localStorage.getItem("userId") || 'guest';
+    }
 
-  const visualSummary = (pdfState.visualSummary || '').trim();
+    const visualSummary = (pdfState.visualSummary || '').trim();
+
 const summarySource = [
   text,
   visualSummary ? `[시각 자료 요약]\n${visualSummary}` : ''
 ].filter(Boolean).join('\n\n');
 
-summaryText = await postText(pdfApi.summary, summarySource);
-} catch (error) {
-  console.warn('Summary API failed. Falling back to local summary.', error);
-  summaryText = buildLocalSummary(text).join('\n');
-  showToast('요약 API 연결이 어려워 로컬 요약을 표시합니다.', 'WARN');
-}
+const response = await fetch(pdfApi.summary, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json;charset=UTF-8',
+    'X-User-Id': String(currentUserId)
+  },
+  body: JSON.stringify({ 
+    text: summarySource,
+    subject: pdfState.subject || "운영체제"
+  })
+});
 
+    if (!response.ok) throw new Error(await response.text());
+    
+    const result = await response.json(); 
+    
+    // 🛑 [수정 포인트] 여기서 미리 summaryId를 고정하지 않습니다. (아직 저장을 안 했으므로 0)
+    pdfState.summaryId = 0; 
+    summaryText = result.summary || result.text || ''; // 백엔드가 텍스트만 주든 객체를 주든 받음
+
+  } catch (error) {
+    console.warn('Summary API failed. Falling back to local summary.', error);
+    summaryText = buildLocalSummary(text).join('\n');
+    pdfState.summaryId = 0;
+    showToast('요약 API 연결이 어려워 로컬 요약을 표시합니다.', 'WARN');
+  }
+
+  // 이후 화면 렌더링 로직은 동일
   pdfState.summaryText = cleanSummaryMarkdown(summaryText);
   pdfState.summaryItems = buildLocalSummary(pdfState.summaryText || text);
   if (!pdfState.summaryItems.length && summaryText) {
@@ -334,13 +367,14 @@ summaryText = await postText(pdfApi.summary, summarySource);
   }
   pdfState.keywords = extractKeywords(`${text} ${pdfState.summaryText}`);
   pdfState.subject = inferPdfSubject(`${text} ${pdfState.summaryText}`);
+  
   if (!isAllowedPdfSubject(pdfState.subject)) {
     showToast(buildBlockedPdfSubjectMessage(pdfState.subject), 'WARN');
     return;
   }
   pdfState.summaryRefs = buildSummaryRefs(pdfState.summaryItems, pdfState.keywords);
 
-  const visualSummary = (pdfState.visualSummary || '').trim();
+  const currentVisualSummary = (pdfState.visualSummary || '').trim();
 
 document.getElementById('pdfSummaryOutput').innerHTML = `
   <div style="margin-bottom:18px;">
@@ -363,7 +397,7 @@ document.getElementById('pdfSummaryOutput').innerHTML = `
     </ul>
   </div>
 
-  ${visualSummary ? `
+  ${currentVisualSummary ? `
     <div style="
       margin-top:18px;
       padding-top:16px;
@@ -384,13 +418,13 @@ document.getElementById('pdfSummaryOutput').innerHTML = `
         font-size:14px;
         color:var(--text2);
       ">
-        ${escapePdfHtml(visualSummary)}
+        ${escapePdfHtml(currentVisualSummary)}
       </div>
     </div>
   ` : ''}
 `;
-  renderPdfVisualMaterials(true);
-  showToast('번호가 붙은 요약을 생성했습니다.');
+
+  showToast('번호가 붙은 요약을 생성했습니다. 저장하려면 [요약 저장]을 누르세요.');
 }
 
 function cleanSummaryMarkdown(text) {
@@ -631,14 +665,24 @@ async function saveStudyMemo() {
   const input = document.getElementById('studyMemoInput');
   const userId = requireLoginForSave();
   if(!userId) return;
+  
   const content = input.value.trim();
   if (!content) {
     showToast('메모 내용을 먼저 입력해주세요.', 'WARN');
     return;
   }
 
+  const currentSummaryId = pdfState.summaryId || 0;
+
+  // 🛑 [변경] 임시저장 로직을 완전히 없애고 경고 메시지 후 리턴 처리
+  if (currentSummaryId === 0 || currentSummaryId === "0") {
+    showToast('먼저 상단의 [요약 저장] 버튼을 눌러 보관함에 추가한 후 메모를 작성할 수 있습니다.', 'WARN');
+    return;
+  }
+
+  // 요약본 ID가 진짜 존재할 때만 정상적으로 서버(DB) 통신
   const memo = {
-    summaryId: String(pdfState.summaryId || 0),
+    summaryId: String(currentSummaryId),
     memoContent: content
   };
 
@@ -653,20 +697,30 @@ async function saveStudyMemo() {
     });
     if (!response.ok) throw new Error(await response.text());
     input.value = '';
-    showToast('학습 메모를 저장했습니다.');
-    await loadStudyMemos();
+    showToast('학습 메모를 저장했습니다. ✅');
+    await loadStudyMemos(); // 등록 성공 후 서버 데이터 다시 로드
   } catch (error) {
-    console.warn('Memo API failed. Saving locally.', error);
-    saveLocalMemo(content);
-    input.value = '';
-    renderStudyMemos(getLocalMemos());
-    showToast('메모를 브라우저에 임시 저장했습니다.', 'WARN');
+    console.error(error);
+    showToast('메모 저장에 실패했습니다: ' + error.message, 'WARN');
   }
 }
 
 async function loadStudyMemos() {
+  const list = document.getElementById('studyMemoList');
+  
+  // 🛑 summaryId가 없거나 0일 때는 조회를 취소하고 안내 문구 출력
+  if (!pdfState.summaryId || pdfState.summaryId === 0 || pdfState.summaryId === "0") {
+    if (list) {
+      list.innerHTML = `
+        <div style="text-align:center; padding:20px; color:var(--text3); font-size:13.5px;">
+          요약본을 저장한 후 학습 메모를 작성하고 확인할 수 있습니다.
+        </div>
+      `;
+    }
+    return; 
+  }
+
   try {
-    // 현재 로그인된 유저의 ID 추출 (우선순위: 함수형 식별 -> 객체형 식별 -> guest)
     let currentId = 'guest';
     if (typeof window.getCurrentUserId === 'function' && window.getCurrentUserId()) {
       currentId = window.getCurrentUserId();
@@ -674,7 +728,8 @@ async function loadStudyMemos() {
       currentId = window.currentUser.id;
     }
 
-    const response = await fetch(pdfApi.memoList(pdfState.summaryId || 0), {
+    // 오직 실제 DB 일련번호가 존재할 때만 서버에 메모 데이터를 요청함
+    const response = await fetch(pdfApi.memoList(pdfState.summaryId), {
       headers: {
         'X-User-Id': String(currentId)
       }
@@ -683,14 +738,103 @@ async function loadStudyMemos() {
     const memos = await response.json();
     renderStudyMemos(Array.isArray(memos) ? memos : []);
   } catch (error) {
-    renderStudyMemos(getLocalMemos());
+    console.error(error);
+    // 🛑 임시저장을 없앴으므로 에러 시 getLocalMemos 로컬 백업 로직을 태우지 않고 빈 배열 처리합니다.
+    renderStudyMemos([]);
   }
 }
 
-function saveLocalMemo(content) {
+async function updateStudyMemo(memoId) {
+  const userId = requireLoginForSave();
+  if (!userId) return;
+
+  const editInput = document.getElementById(`editMemoInput-${memoId}`);
+  const updatedContent = editInput.value.trim();
+
+  if (!updatedContent) {
+    showToast('수정할 내용을 입력해주세요.', 'WARN');
+    return;
+  }
+
+  try {
+    showToast('메모를 수정하는 중입니다...');
+    const response = await fetch(pdfApi.updateMemo, {
+      method: 'POST', // 💡 POST로 변경
+      headers: {
+        'Content-Type': 'application/json;charset=UTF-8',
+        'X-User-Id': userId
+      },
+      body: JSON.stringify({ 
+        id: memoId, // 백엔드 엔티티의 ID 필드명과 맞춰주세요 (예: memoId 등)
+        memoContent: updatedContent 
+      })
+    });
+
+    if (!response.ok) throw new Error(await response.text());
+
+    showToast('학습 메모가 수정되었습니다. ✅');
+    await loadStudyMemos(); 
+  } catch (error) {
+    console.error(error);
+    showToast('메모 수정에 실패했습니다: ' + error.message, 'WARN');
+  }
+}
+
+// 🌟 POST 방식으로 메모 삭제
+async function deleteStudyMemo(memoId) {
+  const userId = requireLoginForSave();
+  if (!userId) return;
+
+  if (!confirm('정말로 이 메모를 삭제하시겠습니까?')) return;
+
+  try {
+    showToast('메모를 삭제하는 중입니다...');
+    const response = await fetch(pdfApi.deleteMemo, {
+      method: 'POST', // 💡 POST로 변경
+      headers: {
+        'Content-Type': 'application/json;charset=UTF-8',
+        'X-User-Id': userId
+      },
+      body: JSON.stringify({ 
+        id: memoId // 삭제할 메모의 ID 전송
+      })
+    });
+
+    if (!response.ok) throw new Error(await response.text());
+
+    showToast('학습 메모가 삭제되었습니다. 🗑️');
+    await loadStudyMemos(); 
+  } catch (error) {
+    console.error(error);
+    showToast('메모 삭제에 실패했습니다: ' + error.message, 'WARN');
+  }
+}
+
+// 수정 폼 토글 헬퍼 함수
+function toggleEditForm(memoId) {
+  const displayDiv = document.getElementById(`memoDisplay-${memoId}`);
+  const editDiv = document.getElementById(`memoEditForm-${memoId}`);
+  
+  if (editDiv.style.display === 'none') {
+    editDiv.style.display = 'block';
+    displayDiv.style.display = 'none';
+  } else {
+    editDiv.style.display = 'none';
+    displayDiv.style.display = 'block';
+  }
+}
+
+// 전역 스코프 바인딩
+window.updateStudyMemo = updateStudyMemo;
+window.deleteStudyMemo = deleteStudyMemo;
+window.toggleEditForm = toggleEditForm;
+
+// 💡 summaryId 파라미터 추가
+function saveLocalMemo(content, summaryId) {
   const memos = getLocalMemos();
   memos.unshift({
     id: Date.now(),
+    summaryId: summaryId ? Number(summaryId) : 0,// 타입을 맞춰서 저장
     memoContent: content,
     createdAt: new Date().toISOString()
   });
@@ -723,34 +867,63 @@ function renderStudyMemos(memos) {
   let currentId = null;
   if (typeof window.getCurrentUserId === 'function') {
     currentId = window.getCurrentUserId();
+  } else if (typeof window.currentUser !== 'undefined' && window.currentUser?.id) {
+    currentId = window.currentUser.id;
   } else if (typeof currentUser !== 'undefined' && currentUser?.id) {
     currentId = currentUser.id;
   } else {
     currentId = sessionStorage.getItem("userId") || localStorage.getItem("userId");
   }
 
-  if (!currentUser) {
-    // ⚠️ 기존 코드의 memoList.innerHTML를 상단 변수인 list.innerHTML로 수정
+  if (!currentId || currentId === 'guest') {
     list.innerHTML = `
-      <div style="text-align:center; padding:20px; color:var(--text3);">
+      <div style="text-align:center; padding:20px; color:var(--text3); font-size:13.5px;">
         로그인 후 학습 메모를 확인할 수 있습니다.
       </div>
     `;
     return;
   }
   
-  // memos가 아예 없거나(undefined/null), 혹은 빈 배열([])일 때 모두 대응합니다.
-  if (!memos || memos.length === 0) {
+  // 🛑 0번 임시 아이디 데이터는 완벽히 거부하고 진짜 매핑된 데이터만 필터링
+  const currentSummaryId = String(pdfState.summaryId || 0);
+  const validMemos = (memos || []).filter(memo => {
+    return memo && memo.summaryId !== 0 && memo.summaryId !== "0" && String(memo.summaryId) === currentSummaryId;
+  });
+
+  if (!validMemos || validMemos.length === 0) {
     list.textContent = '저장된 메모가 아직 없습니다.';
     return;
   }
 
-  list.innerHTML = memos.map(memo => `
-    <div class="memo-item">
-      <div>${escapePdfHtml(memo.memoContent || '')}</div>
-      <span class="memo-date">${formatMemoDate(memo.createdAt)}</span>
-    </div>
-  `).join('');
+  // 이제 임시저장 라벨링 없이 정상적인 리스트만 렌더링
+  list.innerHTML = validMemos.map(memo => {
+    const memoId = memo.id || memo.memoId; 
+    
+    return `
+      <div class="memo-item" id="memoItem-${memoId}" style="margin-bottom: 12px; padding: 10px; border-bottom: 1px solid var(--border);">
+        
+        <div id="memoDisplay-${memoId}">
+          <div class="memo-content" style="white-space: pre-wrap;">${escapePdfHtml(memo.memoContent || '')}</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+            <span class="memo-date" style="font-size: 11px; color: var(--text3);">${formatMemoDate(memo.createdAt)}</span>
+            <div class="memo-actions">
+              <button class="btn-text" style="color: var(--text2); margin-right: 8px; cursor: pointer; background: none; border: none;" onclick="toggleEditForm(${memoId})">수정</button>
+              <button class="btn-text" style="color: var(--accent-warn, #ff4d4f); cursor: pointer; background: none; border: none;" onclick="deleteStudyMemo(${memoId})">삭제</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="memoEditForm-${memoId}" style="display: none; margin-top: 5px;">
+          <textarea id="editMemoInput-${memoId}" style="width: 100%; min-height: 60px; padding: 6px; box-sizing: border-box; resize: vertical;">${escapePdfHtml(memo.memoContent || '')}</textarea>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 5px;">
+            <button class="btn-secondary" style="font-size: 12px; padding: 4px 8px;" onclick="toggleEditForm(${memoId})">취소</button>
+            <button class="btn-primary" style="font-size: 12px; padding: 4px 8px;" onclick="updateStudyMemo(${memoId})">저장</button>
+          </div>
+        </div>
+
+      </div>
+    `;
+  }).join('');
 }
 
 function formatMemoDate(value) {
@@ -839,9 +1012,8 @@ function escapePdfHtml(value) {
 }
 
 async function saveSummary(){
-  // 1. [추가] 로그인 상태를 먼저 검증하고 유저 ID를 가져옵니다.
   const userId = requireLoginForSave();
-  if (!userId) return; // 로그인이 안 되어 있으면 여기서 중단 (로그인 창 표시)
+  if (!userId) return; 
 
   if(!pdfState.summaryText || pdfState.summaryText.trim() === ""){
     showToast("먼저 요약을 생성하세요.", "WARN");
@@ -850,36 +1022,37 @@ async function saveSummary(){
 
   try{
     const data = {
-  pdfId: String(pdfState.summaryId || 0),
-  summary: pdfState.summaryText,
-  question: Array.isArray(pdfState.blanks) && pdfState.blanks.length > 0 ? pdfState.blanks[0].question : "",
-  answer: Array.isArray(pdfState.blanks) && pdfState.blanks.length > 0 ? pdfState.blanks[0].keyword : "",
-  visualPagesJson: JSON.stringify(pdfState.visualPages || []),
-  visualSummary: pdfState.visualSummary || ""
-};
+      summary: pdfState.summaryText,
+      visualPagesJson: JSON.stringify(pdfState.visualPages || []),
+      visualSummary: pdfState.visualSummary || ""
+    };
 
     const response = await fetch("/api/pdf/save-summary", {
       method: 'POST',
       headers: {
         "Content-Type": "application/json",
-        // 2. [추가] 서버가 누구의 요약본인지 알 수 있도록 헤더에 유저 ID를 넣어줍니다.
         "X-User-Id": userId 
       },
       body: JSON.stringify(data)
     });
-    // 🌟 중요: 백엔드가 저장 후 저장된 객체(JSON)를 주는지, 단순 텍스트를 주는지 확인해야 합니다.
-    // 만약 백엔드가 저장된 SummaryNote 엔티티를 JSON으로 반환한다면 아래와 같이 파싱합니다.
-    const result = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(resultText);
+      throw new Error("서버 저장 실패");
     }
 
+    // 🌟 백엔드가 이제 String 대신 SummaryNote 객체(JSON)를 주므로 정상 파싱 가능합니다.
+    const result = await response.json().catch(() => null);
+
     if (result && (result.id || result.summaryId)) {
+      // 서버가 발급해 준 진짜 고유 DB ID를 드디어 할당!
       pdfState.summaryId = result.id || result.summaryId;
-      console.log("DB에 저장된 진짜 요약 ID 고정 완료:", pdfState.summaryId);
+      console.log("DB 최초 저장 완료! 고정된 요약 ID:", pdfState.summaryId);
     }
-    showToast("요약 저장 완료 ✅");
+    
+    showToast("요약본이 보관함에 최종 저장되었습니다! ✅");
+    
+    // 요약 저장이 완료되었으니, 이 ID에 종속된 서버 메모를 불러옵니다.
+    await loadStudyMemos();
   }
   catch(error){
     console.error(error);
@@ -888,34 +1061,34 @@ async function saveSummary(){
 }
 
 async function saveGeneratedQuestion(question) {
-  // 1. [수정] 로그인 상태를 검증하고 유저 ID를 가져옵니다. (비로그인 시 guest 저장 방지)
   const userId = requireLoginForSave();
   if (!userId) return; 
 
+  // 🛑 [가드 코드 추가] 요약이 먼저 저장되어야만 문제를 매핑할 수 있습니다.
+  if (!pdfState.summaryId || pdfState.summaryId === 0 || pdfState.summaryId === "0") {
+    console.log("요약본이 아직 저장되지 않아 문제 자동 저장을 대기합니다.");
+    return; // 사용자가 '요약 저장'을 누를 때 문제도 같이 가므로 여기서 먼저 보낼 필요 없음
+  }
+
   try {
-    // 2. [수정] postJson 대신 직접 fetch를 사용하여 헤더에 X-User-Id를 넣어줍니다.
     const response = await fetch(pdfApi.saveQuestion, {
       method: 'POST',
       headers: {
         "Content-Type": "application/json;charset=UTF-8",
-        "X-User-Id": userId // 🌟 여기에 유저 ID가 들어가야 서버에서 guest로 안 보냅니다!
+        "X-User-Id": userId
       },
       body: JSON.stringify({
-        summaryId: String(pdfState.summaryId || 0),
+        summaryId: String(pdfState.summaryId),
         question: question.question,
         answer: question.keyword,
         questionType: "blank"
       })
     });
 
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-
+    if (!response.ok) throw new Error(await response.text());
     showToast("문제가 DB에 저장되었습니다 ✅");
   } catch(error) {
     console.error(error);
-    showToast("문제 저장 실패 ❌", "WARN");
   }
 }
 

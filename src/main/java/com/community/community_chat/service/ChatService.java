@@ -166,7 +166,6 @@ public class ChatService {
                                                 member.getUser().getLoginId(),
                                                 member.getUser().getEmail(),
                                                 member.getUser().getName(),
-                                                member.getUser().getGrade(),
                                                 member.getUser().getRole().name()))
                                 .toList();
         }

@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface ReverseLearningLogRepository extends JpaRepository<ReverseLearningLog, Long> {
     List<ReverseLearningLog> findBySummaryId(Long summaryId);
+
+    List<ReverseLearningLog> findByUserId(String userId);
 }

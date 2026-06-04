@@ -40,6 +40,8 @@ async function loadSavedSummaryToStudyPage(noteId) {
 function openSummaryDetailModal(note) {
   let modal = document.getElementById('summaryDetailModal');
 
+  const summaryId = note.id || note.summaryId || 0;
+
   if (!modal) {
     modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -63,6 +65,26 @@ function openSummaryDetailModal(note) {
           </div>
         </div>
 
+        <hr style="border:0; border-top:1px dashed var(--border); margin:24px 0;">
+        
+        <div>
+          <h3 style="font-size:16px; font-weight:800; margin-bottom:10px; color:var(--text);">
+            📝 이 요약본의 학습 메모
+          </h3>
+          
+          <div id="mypage-memo-list" style="margin-bottom:15px; max-height:200px; overflow-y:auto; font-size:13px; color:var(--text2);">
+            로딩 중...
+          </div>
+
+          <div style="display:flex; gap:10px;">
+            <textarea id="mypageMemoInput" placeholder="이 요약 노트에 대한 추가 메모를 남겨보세요." 
+              style="flex:1; height:54px; padding:10px; border-radius:6px; background:var(--bg1); color:var(--text1); border:1px solid var(--border); resize:none; font-size:13px;"></textarea>
+            <button class="btn-secondary" id="mypageMemoSubmitBtn" style="padding:0 16px; font-size:13px; white-space:nowrap;">
+              등록
+            </button>
+          </div>
+        </div>
+
         <div style="display:flex; justify-content:flex-end; margin-top:24px;">
           <button class="btn-outline" onclick="closeSummaryDetailModal()">
             닫기
@@ -80,7 +102,9 @@ function openSummaryDetailModal(note) {
     document.body.appendChild(modal);
   }
 
-  const savedAt = note.createdAt || note.cratedAt;
+  modal.setAttribute('data-summary-id', summaryId);
+
+  const savedAt = note.cratedAt || note.cratedAt;
   const dateStr = savedAt ? String(savedAt).split('T')[0] : '확인 불가';
 
   document.getElementById('summary-detail-meta').textContent =
@@ -89,7 +113,209 @@ function openSummaryDetailModal(note) {
   document.getElementById('summary-detail-content').textContent =
     note.summary || '저장된 요약 내용이 없습니다.';
 
+  const submitBtn = document.getElementById('mypageMemoSubmitBtn');
+  submitBtn.onclick = () => saveMypageStudyMemo(summaryId);
+
   modal.classList.add('open');
+
+  loadMypageStudyMemos(summaryId);
+}
+
+async function loadMypageStudyMemos(summaryId) {
+  const listContainer = document.getElementById('mypage-memo-list');
+  if (!listContainer) return;
+
+  let currentId = 'guest';
+  const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+  if (savedUser && savedUser.id) currentId = savedUser.id;
+  else currentId = sessionStorage.getItem("userId") || localStorage.getItem("userId") || "guest";
+
+  try {
+    // pdf-study.js의 api 규격과 동일하게 호출 (/api/pdf/memo/{summaryId})
+    const response = await fetch(`/api/pdf/memo/${summaryId}`, {
+      headers: { 'X-User-Id': String(currentId) }
+    });
+    
+    if (!response.ok) throw new Error('메모 로드 실패');
+    
+    const memos = await response.json();
+    
+    if (!memos || memos.length === 0) {
+      listContainer.innerHTML = `<div style="color:var(--text3); padding:10px 0;">작성된 학습 메모가 없습니다.</div>`;
+      return;
+    }
+
+    listContainer.innerHTML = memos.map(memo => {
+      const date = memo.createdAt && memo.createdAt.includes('T')
+        ? memo.createdAt.split('T')[0] 
+        : (memo.createdAt ? String(memo.createdAt).substring(0, 10) : '방금 전');
+      const memoId = memo.id;
+      return `
+        <div id="mypage-memo-item-${memoId}" style="background:var(--bg1); padding:10px; border-radius:6px; margin-bottom:8px; border:1px solid var(--border);">
+          <div class="memo-text-zone" style="word-break:break-all; line-height:1.4; font-size:13.5px; color:var(--text1);">
+            ${localEscapeHtml(memo.memoContent || '')}
+          </div>
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text3); margin-top:6px;">
+            <div class="memo-btn-zone">
+              <button onclick="editMypageStudyMemo(${memoId}, ${summaryId})" style="background:none; border:none; color:var(--text3); cursor:pointer; padding:0 4px; text-decoration:underline;">수정</button>
+              <button onclick="deleteMypageStudyMemo(${memoId}, ${summaryId})" style="background:none; border:none; color:#f87171; cursor:pointer; padding:0 4px; text-decoration:underline;">삭제</button>
+            </div>
+            <div>📅 ${date}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (error) {
+    console.error(error);
+    listContainer.innerHTML = `<div style="color:red; font-size:12px;">메모를 불러오지 못했습니다.</div>`;
+  }
+}
+
+// 💡 [추가] 마이페이지 모달 내에서 새로운 메모를 작성 및 저장하는 함수
+async function saveMypageStudyMemo(summaryId) {
+  const input = document.getElementById('mypageMemoInput');
+  const content = input.value.trim();
+  
+  if (!content) {
+    if (typeof showToast === 'function') showToast('메모 내용을 입력해주세요.', 'WARN');
+    else alert('메모 내용을 입력해주세요.');
+    return;
+  }
+
+  // 로그인 유저 식별자 확보
+  let userId = sessionStorage.getItem("userId") || localStorage.getItem("userId");
+  const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+  if (savedUser && savedUser.id) userId = savedUser.id;
+
+  if (!userId || userId === 'guest') {
+    if (typeof showToast === 'function') showToast('로그인 후 메모를 저장할 수 있습니다.', 'WARN');
+    else alert('로그인 후 이용 가능합니다.');
+    return;
+  }
+
+  const payload = {
+    summaryId: String(summaryId),
+    memoContent: content
+  };
+
+  try {
+    const response = await fetch('/api/pdf/memo', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json;charset=UTF-8',
+        'X-User-Id': String(userId)
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) throw new Error(await response.text());
+
+    input.value = '';
+    if (typeof showToast === 'function') showToast('학습 메모를 추가했습니다. ✅');
+    
+    // 등록 성공 후 메모 목록 새로고침
+    loadMypageStudyMemos(summaryId);
+
+  } catch (error) {
+    console.error(error);
+    if (typeof showToast === 'function') showToast('메모 저장 실패 ❌', 'WARN');
+  }
+}
+
+async function editMypageStudyMemo(memoId, summaryId) {
+  const itemDiv = document.getElementById(`mypage-memo-item-${memoId}`);
+  if (!itemDiv) return;
+
+  const textZone = itemDiv.querySelector('.memo-text-zone');
+  const btnZone = itemDiv.querySelector('.memo-btn-zone');
+  
+  // 수정 전 원래 텍스트 추출 (HTML escape 복원 대신 raw text를 취하기 위해 임시 div 활용)
+  const currentText = textZone.innerText;
+
+  // 1. 해당 메모 아이템을 인라인 수정 textarea 폼으로 전환
+  textZone.innerHTML = `
+    <textarea class="edit-memo-input" style="width:100%; height:46px; padding:6px; border-radius:4px; background:var(--surface); color:var(--text); border:1px solid var(--accent); resize:none; font-size:13px; line-height:1.4;">${currentText}</textarea>
+  `;
+
+  // 2. 버튼 구성을 [저장], [취소]로 변경
+  btnZone.innerHTML = `
+    <button class="save-btn" style="background:none; border:none; color:var(--accent); font-weight:bold; cursor:pointer; padding:0 4px; text-decoration:underline;">저장</button>
+    <button class="cancel-btn" style="background:none; border:none; color:var(--text3); cursor:pointer; padding:0 4px; text-decoration:underline;">취소</button>
+  `;
+
+  // 취소 이벤트 바인딩 (목록 재렌더링으로 롤백)
+  btnZone.querySelector('.cancel-btn').onclick = () => loadMypageStudyMemos(summaryId);
+
+  // 저장 이벤트 바인딩
+  btnZone.querySelector('.save-btn').onclick = async () => {
+    const newContent = textZone.querySelector('.edit-memo-input').value.trim();
+    if (!newContent) {
+      alert('메모 내용을 입력해주세요.');
+      return;
+    }
+
+    let userId = sessionStorage.getItem("userId") || localStorage.getItem("userId");
+    const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+    if (savedUser && savedUser.id) userId = savedUser.id;
+
+    try {
+      const response = await fetch('/api/pdf/memo/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json;charset=UTF-8',
+          'X-User-Id': String(userId)
+        },
+        body: JSON.stringify({
+          id: memoId,                // StudyMemoRequest의 Long id 매핑
+          memoContent: newContent
+        })
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      if (typeof showToast === 'function') showToast('메모가 수정되었습니다. ✨');
+      loadMypageStudyMemos(summaryId); // 수정 성공 후 새로고침
+
+    } catch (error) {
+      console.error(error);
+      if (typeof showToast === 'function') showToast('메모 수정 실패 ❌', 'WARN');
+      else alert('메모 수정에 실패했습니다.');
+    }
+  };
+}
+
+// 💡 [추가] 마이페이지 모달 내 메모 삭제 함수
+async function deleteMypageStudyMemo(memoId, summaryId) {
+  if (!confirm('이 학습 메모를 정말 삭제하시겠습니까?')) return;
+
+  let userId = sessionStorage.getItem("userId") || localStorage.getItem("userId");
+  const savedUser = JSON.parse(localStorage.getItem("currentUser"));
+  if (savedUser && savedUser.id) userId = savedUser.id;
+
+  try {
+    const response = await fetch('/api/pdf/memo/delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json;charset=UTF-8',
+        'X-User-Id': String(userId)
+      },
+      body: JSON.stringify({
+        id: memoId // StudyMemoRequest의 Long id 매핑
+      })
+    });
+
+    if (!response.ok) throw new Error(await response.text());
+
+    if (typeof showToast === 'function') showToast('메모가 삭제되었습니다. 🗑️');
+    loadMypageStudyMemos(summaryId); // 삭제 성공 후 목록 새로고침
+
+  } catch (error) {
+    console.error(error);
+    if (typeof showToast === 'function') showToast('메모 삭제 실패 ❌', 'WARN');
+    else alert('메모 삭제에 실패했습니다.');
+  }
 }
 
 function closeSummaryDetailModal() {
@@ -159,13 +385,12 @@ async function renderMyPageMockData(tabId) {
           <div class="post-item" onclick="loadSavedSummaryToStudyPage(${note.id})" style="cursor:pointer; margin-bottom:12px;">
             <div class="post-main">
               <div class="post-title" style="font-weight:600; font-size:16px; color:var(--text1); margin-bottom:8px;">
-                📄 요약 노트 #${note.id}
+                📄 요약 노트
               </div>
               <div class="post-content" style="font-size:14px; color:var(--text2); line-height:1.5; margin-bottom:10px;">
                 ${shortSummary}
               </div>
               <div class="post-info" style="font-size:12px; color:var(--text3);">
-                <span>❓ 퀴즈: ${note.quizQuestion ? '✅ 생성됨' : '❌ 없음'}</span>
                 <span style="margin-left: 15px;">📅 저장일: ${dateStr}</span>
               </div>
             </div>
@@ -261,6 +486,113 @@ async function renderMyPageMockData(tabId) {
         </div>
       `;
     }).join('');
+  }
+  else if (tabId === 'feedback') {
+    const feedbackList = document.getElementById('mypage-feedback-list');
+    if (!feedbackList) return;
+
+    feedbackList.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text3);">AI 피드백 기록을 불러오는 중입니다...</div>`;
+
+    // 1. 로그인 유저 아이디 추출 (pdf-study.js 규격과 매칭)
+    let userId = sessionStorage.getItem("userId") || localStorage.getItem("userId");
+    if (!userId && typeof window.getCurrentUserId === 'function') {
+      userId = window.getCurrentUserId();
+    }
+
+    // 비로그인 Guest 유저 예외 처리
+    if (!userId || userId === "guest") {
+      feedbackList.innerHTML = `
+        <div style="text-align:center; padding:40px; color:var(--text3);">
+          🔑 로그인이 필요한 서비스입니다.<br>
+          <small style="font-size:12px; color:var(--text4); display:block; margin-top:6px;">
+            로그인 후 AI 역질문 피드백 데이터를 연동할 수 있습니다.
+          </small>
+        </div>`;
+      return;
+    }
+
+    try {
+      // 2. 백엔드 새로 만든 GET API 호출
+      const response = await fetch('/api/pdf/reverse-log', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json;charset=UTF-8',
+          'X-User-Id': String(userId)
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`서버 상태 에러 (${response.status})`);
+      }
+
+      const myFeedbacks = await response.json();
+
+      if (!myFeedbacks || myFeedbacks.length === 0) {
+        feedbackList.innerHTML = `
+          <div style="text-align:center; padding:40px; color:var(--text3);">
+            저장된 AI 역질문 피드백 내역이 없습니다.<br>
+            <small style="font-size:12px; color:var(--text4); display:block; margin-top:6px;">
+              PDF 요약 페이지에서 AI의 역질문에 답변하고 피드백을 저장해 보세요!
+            </small>
+          </div>`;
+        return;
+      }
+
+      // 3. 데이터 루프 돌며 동적 HTML 생성 (카드 레이아웃)
+      feedbackList.innerHTML = myFeedbacks.map(log => {
+        const dateStr = log.createdAt && log.createdAt.includes('T') 
+          ? log.createdAt.split('T')[0] 
+          : (log.createdAt || '최근 학습');
+
+        return `
+          <div class="post-item" style="cursor: default; margin-bottom: 16px; padding: 20px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;">
+            <div class="post-main" style="width: 100%;">
+              
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px dashed var(--border); padding-bottom: 8px;">
+                <span style="font-weight: 700; font-size: 14px; color: var(--accent);">
+                  🤖 AI 구술 피드백
+                </span>
+                <span style="font-size: 12px; color: var(--text3);">📅 ${dateStr}</span>
+              </div>
+              
+              <div style="margin-bottom: 12px;">
+                <div style="font-size: 11px; color: var(--text3); font-weight: 600; margin-bottom: 4px;">AI 역질문</div>
+                <div style="color: var(--text1); font-size: 13.5px; line-height: 1.5;">
+                  ${localEscapeHtml(log.reverseQuestion)}
+                </div>
+              </div>
+              
+              <div style="margin-bottom: 16px; background: rgba(0, 0, 0, 0.2); padding: 12px; border-radius: 8px; border-left: 3px solid var(--text4);">
+                <div style="font-size: 11px; color: var(--text3); margin-bottom: 4px; font-weight: 600;">나의 답변</div>
+                <div style="color: var(--text2); font-size: 13px; line-height: 1.5; white-space: pre-wrap;">
+                  ${localEscapeHtml(log.userAnswer || '작성된 내용이 없습니다.')}
+                </div>
+              </div>
+              
+              <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.15); padding: 14px; border-radius: 8px;">
+                <div style="font-size: 12px; color: var(--accent); font-weight: bold; margin-bottom: 6px;">
+                  📊 AI 평가 리포트
+                </div>
+                <div style="color: var(--text1); font-size: 13px; line-height: 1.6; white-space: pre-wrap;">
+                  ${localEscapeHtml(log.aiFeedback)}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        `;
+      }).join('');
+
+    } catch (error) {
+      console.error("마이페이지 AI 피드백 탭 바인딩 에러:", error);
+      feedbackList.innerHTML = `
+        <div style="text-align:center; padding:40px; color:var(--text3);">
+          ⚠️ 피드백 기록을 불러오지 못했습니다.<br>
+          <small style="color:#ef4444; font-size:12px; display:block; margin-top:4px;">
+            원인: 백엔드 목록조회 API 엔드포인트를 점검해 주세요. (${error.message})
+          </small>
+        </div>`;
+    }
   }
   else if (tabId === 'posts') {
 
@@ -427,3 +759,12 @@ document.addEventListener('click', e => {
     switchMyPageTab('pdf', firstTab); 
   }
 });
+
+function localEscapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}

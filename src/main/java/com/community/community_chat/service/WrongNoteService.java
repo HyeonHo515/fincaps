@@ -44,7 +44,6 @@ public class WrongNoteService {
         note.setAnswerKeywordsJson(request.getAnswerKeywordsJson());
         note.setDebugSolved(request.isDebugSolved());
         note.setRelapsed(request.isRelapsed());
-        note.setCooldownUntil(request.getCooldownUntil());
         note.setUserId(normalizedUserId);
         note.applyDefaults();
 
