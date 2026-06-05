@@ -2738,6 +2738,49 @@ nav {
   font-weight: 900 !important;
 }
 
+#mypage-content-posts .post-item,
+#mypage-content-comments .post-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 20px !important;
+  min-height: 92px !important;
+  padding: 20px 24px !important;
+  background: var(--bg2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+}
+
+#mypage-content-posts .post-item:hover,
+#mypage-content-comments .post-item:hover {
+  border-color: var(--accent) !important;
+  background: var(--surface) !important;
+  box-shadow: none !important;
+  transform: translateX(4px) !important;
+}
+
+#mypage-content-posts .post-title,
+#mypage-content-comments .post-title {
+  color: #f4f8ff !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
+}
+
+#mypage-content-comments .post-main > div:first-child {
+  color: #8fa3c8 !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+#mypage-content-posts .post-info,
+#mypage-content-comments .post-info,
+#mypage-content-posts .post-info span,
+#mypage-content-comments .post-info span {
+  color: #8fa3c8 !important;
+  font-weight: 700 !important;
+}
+
 #board-detail-view .post-detail-card,
 #page-mypage .mypage-section,
 .modal {
