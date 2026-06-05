@@ -152,51 +152,30 @@ function renderPdfVisualMaterials() {
 
   if (!pages.length) {
     box.innerHTML = '';
-    box.style.display = 'none';
+    box.hidden = true;
     return;
   }
 
-  box.style.display = 'block';
+  box.hidden = false;
 
-  box.innerHTML = `
-    <div style="margin-bottom:18px;">
-      <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:10px;">
-        시각 자료 원본
-      </div>
-
-      <div style="
-        border:1px solid var(--border);
-        border-radius:10px;
-        background:white;
-        padding:12px;
-        max-height:520px;
-        overflow:auto;
-      ">
-        ${pages.map((src, index) => `
-          <div style="
-            margin-bottom:14px;
-            padding:10px;
-            border:1px solid #dbeafe;
-            border-radius:8px;
-            background:#ffffff;
-          ">
-            <div style="font-size:13px; font-weight:700; color:var(--text2); margin-bottom:8px;">
-              시각 자료 ${index + 1}
-            </div>
-            <img src="${src}" alt="PDF 시각 자료 ${index + 1}"
-              style="
-                display:block;
-                width:100%;
-                max-height:360px;
-                object-fit:contain;
-                border-radius:6px;
-                background:white;
-              ">
-          </div>
-        `).join('')}
-      </div>
+box.innerHTML = `
+  <div class="pdf-visual-block">
+    <div class="pdf-visual-heading">
+      시각 자료 원본
     </div>
-  `;
+
+    <div class="pdf-visual-scroll">
+      ${pages.map((src, index) => `
+        <div class="pdf-visual-card">
+          <div class="pdf-visual-label">
+            시각 자료 ${index + 1}
+          </div>
+          <img src="${src}" alt="PDF 시각 자료 ${index + 1}" class="pdf-visual-image">
+        </div>
+      `).join('')}
+    </div>
+  </div>
+`;
 }
 
 async function readJsonOrText(response) {

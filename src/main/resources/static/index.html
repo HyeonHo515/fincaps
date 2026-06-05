@@ -190,7 +190,7 @@
 
         <section class="study-panel">
           <div class="pdf-card-title">시각 자료</div>
-          <div id="pdfVisualMaterials" style="display:none;"></div>
+          <div id="pdfVisualMaterials" hidden></div>
         </section>
 
         <section class="study-panel">
@@ -271,7 +271,7 @@
               </label>
             </div>
             <div id="pdfPlaceholder" class="coding-pdf-placeholder">PDF를 올리면 이곳에서 바로 확인할 수 있습니다.</div>
-            <iframe id="pdfViewer" class="coding-pdf-viewer" title="문제 PDF 미리보기"></iframe>
+            <iframe id="pdfViewer" class="coding-pdf-viewer" title="문제 PDF 미리보기" hidden></iframe>
           </section>
   </div>
 
@@ -571,20 +571,19 @@
   </div>
 
   <div class="modal-overlay" id="writeModal">
-    <div class="modal" style="max-width:700px;">
+    <div class="modal write-modal">
       
-      <h2 style="font-family:var(--font-mono); color:var(--accent); margin-bottom:10px;">
+      <h2 class="write-modal-title">
         게시글 작성
       </h2>
 
-      <p style="color:var(--text2); margin-bottom:24px; font-size:14px;">
+      <p class="write-modal-desc">
         커뮤니티에 새로운 글을 작성하세요.
       </p>
 
-      <div style="display:flex; flex-direction:column; gap:14px;">
+      <div class="write-form">
 
-        <select id="write-category"
-          style="padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text);">
+        <select id="write-category" class="write-field">
           <option value="exam">📂 시험/과제 족보</option>
           <option value="qna">❓ 질문/답변</option>
           <option value="career">🚀 진로/취업</option>
@@ -592,20 +591,20 @@
 
         <input type="text"
           id="write-title"
-          placeholder="제목 입력"
-          style="padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text);">
+          class="write-field"
+          placeholder="제목 입력">
 
         <textarea
           id="write-content"
+          class="write-field write-textarea"
           placeholder="내용 입력"
-          rows="10"
-          style="padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); resize:none;"></textarea>
+          rows="10"></textarea>
 
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <label style="font-size:13px; color:var(--text2); font-weight:600;">파일 첨부 (선택)</label>
-          <input type="file" id="write-file" style="padding:8px; background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px;">
+        <div class="write-file-group">
+          <label class="write-file-label">파일 첨부 (선택)</label>
+          <input type="file" id="write-file" class="write-field write-file-input">
         </div>
-        <div style="display:flex; justify-content:flex-end; gap:12px;">
+        <div class="write-actions">
           <button class="btn-outline"
             onclick="document.getElementById('writeModal').classList.remove('open')">
             취소

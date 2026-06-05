@@ -613,47 +613,33 @@ async function renderMyPageMockData(tabId) {
       myPosts.length > 0
         ? myPosts.map(p => `
             <div
+              class="post-item"
               onclick="
                 showPage('board');
                 viewPostDetail(${p.id});
               "
-              style="
-                background:#1e293b;
-                border:1px solid #334155;
-                border-radius:12px;
-                padding:18px;
-                margin-bottom:14px;
-                cursor:pointer;
-                transition:0.2s;
-              "
             >
 
-              <div style="
-                font-size:18px;
-                font-weight:700;
-                color:white;
-                margin-bottom:10px;
-              ">
-                ${p.title}
-              </div>
+              <div class="post-main">
 
-              <div style="
-                display:flex;
-                gap:14px;
-                font-size:13px;
-                color:#94a3b8;
-              ">
-                <span>
-                  📅 ${p.date || '-'}
-                </span>
+                <div class="post-title">
+                  ${p.title}
+                </div>
 
-                <span>
-                  👁️ ${p.views ?? 0}
-                </span>
+                <div class="post-info">
+                  <span>
+                    📅 ${p.date || '-'}
+                  </span>
 
-                <span>
-                  👍 ${p.likes ?? 0}
-                </span>
+                  <span>
+                    👁️ ${p.views ?? 0}
+                  </span>
+
+                  <span>
+                    👍 ${p.likes ?? 0}
+                  </span>
+                </div>
+
               </div>
 
             </div>
@@ -662,7 +648,7 @@ async function renderMyPageMockData(tabId) {
           <div style="
             text-align:center;
             padding:40px;
-            color:#94a3b8;
+            color:var(--text3);
           ">
             작성한 게시글이 없습니다.
           </div>
